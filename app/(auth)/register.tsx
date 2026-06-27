@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, Alert, ScrollView,
+  KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { Link, router } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
@@ -11,36 +11,61 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
   const handleRegister = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Completa todos los campos.');
+    setError('');
+    if (!email || !password || !confirm) {
+      setError('Completa todos los campos.');
       return;
     }
     if (password !== confirm) {
-      Alert.alert('Error', 'Las contraseñas no coinciden.');
+      setError('Las contraseñas no coinciden.');
       return;
     }
     if (password.length < 8) {
-      Alert.alert('Error', 'La contraseña debe tener al menos 8 caracteres.');
+      setError('La contraseña debe tener al menos 8 caracteres.');
       return;
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({ email, password });
-    setLoading(false);
+    try {
+      const { error: authError } = await supabase.auth.signUp({ email, password });
+      setLoading(false);
 
-    if (error) {
-      Alert.alert('Error al registrarse', error.message);
-      return;
+      if (authError) {
+        console.error('Signup error:', authError);
+        const msg = authError.message;
+        setError(!msg || msg === '{}' ? 'Error de conexión. Intenta de nuevo.' : msg);
+        return;
+      }
+
+      setSuccess(true);
+    } catch (e) {
+      setLoading(false);
+      console.error('Signup exception:', e);
+      setError('Error inesperado. Revisa tu conexión e intenta de nuevo.');
     }
-
-    Alert.alert(
-      '¡Cuenta creada!',
-      'Revisa tu correo para confirmar tu cuenta.',
-      [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
-    );
   };
+
+  if (success) {
+    return (
+      <KeyboardAvoidingView style={styles.container}>
+        <View style={styles.successContainer}>
+          <Text style={styles.successIcon}>📬</Text>
+          <Text style={styles.successTitle}>¡Revisa tu correo!</Text>
+          <Text style={styles.successText}>
+            Te enviamos un link de confirmación a {email}.{'\n'}
+            Confirma tu cuenta y luego inicia sesión.
+          </Text>
+          <TouchableOpacity style={styles.button} onPress={() => router.replace('/(auth)/login')}>
+            <Text style={styles.buttonText}>Ir al inicio de sesión</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -86,6 +111,8 @@ export default function RegisterScreen() {
             onChangeText={setConfirm}
             secureTextEntry
           />
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
@@ -137,4 +164,9 @@ const styles = StyleSheet.create({
   linkButton: { alignItems: 'center', paddingVertical: 12 },
   linkText: { fontSize: 14, color: '#94A3B8' },
   linkAccent: { color: '#22D3EE', fontWeight: '600' },
+  errorText: { fontSize: 13, color: '#F87171', textAlign: 'center', paddingVertical: 4 },
+  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 16 },
+  successIcon: { fontSize: 64 },
+  successTitle: { fontSize: 26, fontWeight: '800', color: '#F8FAFC', textAlign: 'center' },
+  successText: { fontSize: 15, color: '#94A3B8', textAlign: 'center', lineHeight: 22 },
 });

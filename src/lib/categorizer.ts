@@ -89,6 +89,8 @@ const COLOMBIAN_MERCHANTS: Record<string, { category: string; type: 'need' | 'wa
   'transferencia': { category: 'Transferencia', type: 'need' },
   'bancolombia': { category: 'Transferencia', type: 'need' },
   'nequi': { category: 'Transferencia', type: 'need' },
+  'nómina': { category: 'Transferencia', type: 'need' },
+  'nomina': { category: 'Transferencia', type: 'need' },
 };
 
 const fuseInstance = new Fuse(Object.keys(COLOMBIAN_MERCHANTS), {

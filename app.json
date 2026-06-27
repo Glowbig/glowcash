@@ -2,6 +2,7 @@
   "expo": {
     "name": "Glowcash",
     "slug": "glowcash",
+    "owner": "glowbig",
     "version": "1.0.0",
     "scheme": "glowcash",
     "orientation": "portrait",
@@ -9,6 +10,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
+      "backgroundColor": "#0F172A",
       "adaptiveIcon": {
         "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -35,6 +37,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a419bbfe-4da9-4e98-a73b-395e56bc9082"
+      }
     }
   }
 }

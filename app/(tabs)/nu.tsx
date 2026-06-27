@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBudgetStore } from '../../src/stores/budget';
 
 function formatCOP(amount: number) {
@@ -11,6 +12,7 @@ const STATUS_ICONS = { green: '✅', yellow: '⚠️', red: '🚨' };
 
 export default function NuScreen() {
   const { computeNuRecommendation, nuRecommendation } = useBudgetStore();
+  const insets = useSafeAreaInsets();
 
   const [cycleSpend, setCycleSpend] = useState('');
   const [savedSoFar, setSavedSoFar] = useState('');
@@ -24,7 +26,7 @@ export default function NuScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 20 }]}>
       <View style={styles.header}>
         <Text style={styles.nuLogo}>💜</Text>
         <Text style={styles.title}>Mi Nu</Text>
@@ -79,7 +81,7 @@ export default function NuScreen() {
               highlight={STATUS_COLORS[nuRecommendation.status]}
             />
             <DetailRow
-              label="Transferir a bolsillo ahorro"
+              label="Transferir a tu Fiducuenta"
               value={formatCOP(nuRecommendation.savingsTransfer)}
               highlight="#4ADE80"
             />
@@ -111,7 +113,7 @@ export default function NuScreen() {
           <View style={styles.tipsCard}>
             <Text style={styles.tipsTitle}>💡 Consejos Nu</Text>
             <Text style={styles.tip}>• Paga SIEMPRE el total de la tarjeta — nunca solo el mínimo.</Text>
-            <Text style={styles.tip}>• Las cajitas Nu rinden 9.25% E.A. — son mejor que tener el dinero quieto.</Text>
+            <Text style={styles.tip}>• Tu Fiducuenta Nu da rentabilidad diaria — mejor que tener el dinero quieto.</Text>
             <Text style={styles.tip}>• Activa el débito automático del total para no olvidar el pago.</Text>
             <Text style={styles.tip}>• Compra en 1 cuota siempre que puedas — sin intereses.</Text>
           </View>

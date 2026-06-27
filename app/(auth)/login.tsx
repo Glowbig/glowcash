@@ -1,25 +1,33 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, Alert, ScrollView,
+  KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleLogin = async () => {
+    setError('');
     if (!email || !password) {
-      Alert.alert('Error', 'Ingresa tu correo y contraseña.');
+      setError('Ingresa tu correo y contraseña.');
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (error) Alert.alert('Error al iniciar sesión', error.message);
+    if (authError) {
+      setError(authError.message === 'Invalid login credentials'
+        ? 'Correo o contraseña incorrectos.'
+        : authError.message);
+    } else {
+      router.replace('/(tabs)');
+    }
   };
 
   return (
@@ -56,6 +64,8 @@ export default function LoginScreen() {
             onChangeText={setPassword}
             secureTextEntry
           />
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
@@ -104,6 +114,7 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
+  errorText: { fontSize: 13, color: '#F87171', textAlign: 'center', paddingVertical: 4 },
   linkButton: { alignItems: 'center', paddingVertical: 12 },
   linkText: { fontSize: 14, color: '#94A3B8' },
   linkAccent: { color: '#22D3EE', fontWeight: '600' },

@@ -1,6 +1,6 @@
 export type Bank = 'bancolombia' | 'nequi' | 'nu' | 'davivienda' | 'cash' | 'other';
 export type AccountType = 'checking' | 'savings' | 'credit' | 'cash' | 'wallet';
-export type TransactionSource = 'email' | 'sms' | 'manual' | 'api';
+export type TransactionSource = 'email' | 'sms' | 'manual' | 'api' | 'pdf';
 export type CategoryType = 'need' | 'want' | 'saving';
 export type BudgetModel = '50_30_20' | '3_bolsillos' | 'custom';
 export type AlertType = 'budget_exceeded' | 'unusual_spending' | 'nu_payment_due' | 'saving_reminder' | 'tip';
@@ -31,7 +31,7 @@ export interface Category {
 export interface Transaction {
   id: string;
   user_id: string;
-  account_id: string;
+  account_id?: string;
   amount: number;
   description: string;
   merchant?: string;

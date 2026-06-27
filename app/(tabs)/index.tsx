@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/stores/auth';
 import { useTransactionsStore } from '../../src/stores/transactions';
 import { useBudgetStore } from '../../src/stores/budget';
@@ -33,6 +34,7 @@ export default function HomeScreen() {
   const { user } = useAuthStore();
   const { transactions, fetchTransactions, loading } = useTransactionsStore();
   const { summary, config } = useBudgetStore();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (user) fetchTransactions(user.id, 20);
@@ -47,7 +49,7 @@ export default function HomeScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + 20 }]}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={() => user && fetchTransactions(user.id, 20)} tintColor="#22D3EE" />}
     >
       {/* Header */}
@@ -56,9 +58,14 @@ export default function HomeScreen() {
           <Text style={styles.greeting}>Hola 👋</Text>
           <Text style={styles.date}>{format(new Date(), "EEEE d 'de' MMMM", { locale: es })}</Text>
         </View>
-        <TouchableOpacity onPress={() => router.push('/import')} style={styles.importBtn}>
-          <Text style={styles.importBtnText}>+ Importar</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity onPress={() => router.push('/new-transaction')} style={styles.newBtn}>
+            <Text style={styles.newBtnText}>+ Nueva</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/import')} style={styles.importBtn}>
+            <Text style={styles.importBtnText}>📥</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Balance card */}
@@ -112,10 +119,10 @@ export default function HomeScreen() {
           </TouchableOpacity>
         ))}
         {transactions.length === 0 && !loading && (
-          <TouchableOpacity style={styles.emptyState} onPress={() => router.push('/import')}>
-            <Text style={styles.emptyIcon}>📥</Text>
-            <Text style={styles.emptyText}>Importa tus transacciones</Text>
-            <Text style={styles.emptySubtext}>Conecta Gmail para importar automáticamente</Text>
+          <TouchableOpacity style={styles.emptyState} onPress={() => router.push('/new-transaction')}>
+            <Text style={styles.emptyIcon}>➕</Text>
+            <Text style={styles.emptyText}>Registra tu primera transacción</Text>
+            <Text style={styles.emptySubtext}>Toca aquí para agregarla manualmente</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -129,8 +136,10 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
   greeting: { fontSize: 22, fontWeight: '700', color: '#F8FAFC' },
   date: { fontSize: 13, color: '#64748B', marginTop: 2, textTransform: 'capitalize' },
-  importBtn: { backgroundColor: '#1E293B', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: '#334155' },
-  importBtnText: { color: '#22D3EE', fontSize: 14, fontWeight: '600' },
+  importBtn: { backgroundColor: '#1E293B', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: '#334155' },
+  importBtnText: { fontSize: 14 },
+  newBtn: { backgroundColor: '#22D3EE', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
+  newBtnText: { color: '#0F172A', fontSize: 14, fontWeight: '700' },
   balanceCard: { backgroundColor: '#1E293B', borderRadius: 20, padding: 24, marginBottom: 24, borderWidth: 1, borderColor: '#334155' },
   balanceLabel: { fontSize: 13, color: '#94A3B8', marginBottom: 4 },
   balanceAmount: { fontSize: 36, fontWeight: '800', letterSpacing: -1, marginBottom: 16 },

@@ -1,4 +1,5 @@
 import { ParsedTransaction } from './bancolombia';
+import { parseAmount } from './utils';
 
 export const NU_SENDERS = [
   'noreply@nu.com.co',
@@ -22,9 +23,8 @@ export function parseNuEmail(body: string, receivedAt: string): ParsedTransactio
   const amountMatch = text.match(/\$\s*([\d.,]+)/);
   if (!amountMatch) return null;
 
-  const amountStr = amountMatch[1].replace(/\./g, '').replace(',', '.');
-  const amount = parseFloat(amountStr);
-  if (isNaN(amount)) return null;
+  const amount = parseAmount(amountMatch[1]);
+  if (isNaN(amount) || amount <= 0) return null;
 
   const isCredit = /recibiste|ingresó|pago procesado|abono/i.test(text);
   const isSavings = /bolsillo|cajita|ahorro/i.test(text);

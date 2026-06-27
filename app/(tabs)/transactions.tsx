@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/stores/auth';
 import { useTransactionsStore } from '../../src/stores/transactions';
 import { learnFromCorrection } from '../../src/lib/categorizer';
-import { Transaction } from '../../src/types';
+import { supabase } from '../../src/lib/supabase';
+import { Transaction, BudgetConfig } from '../../src/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -13,7 +15,7 @@ function formatCOP(amount: number) {
 }
 
 const SOURCE_LABELS: Record<string, string> = {
-  email: '📧', sms: '💬', manual: '✏️', api: '🔗',
+  email: '📧', sms: '💬', manual: '✏️', api: '🔗', pdf: '📄',
 };
 
 export default function TransactionsScreen() {
@@ -21,9 +23,18 @@ export default function TransactionsScreen() {
   const { transactions, fetchTransactions, updateCategory } = useTransactionsStore();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'expenses' | 'income'>('all');
+  const [config, setConfig] = useState<BudgetConfig | null>(null);
+  const [distributingTx, setDistributingTx] = useState<Transaction | null>(null);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (user) fetchTransactions(user.id);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('budget_config').select('*').eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => setConfig(data as BudgetConfig | null));
   }, [user]);
 
   const filtered = transactions.filter((t) => {
@@ -50,8 +61,16 @@ export default function TransactionsScreen() {
     );
   };
 
+  const handleRowPress = (tx: Transaction) => {
+    if (tx.amount > 0) setDistributingTx(tx);
+  };
+
+  const needsPct = (config?.needs_pct ?? 58) / 100;
+  const wantsPct = (config?.wants_pct ?? 30) / 100;
+  const savingsPct = (config?.savings_pct ?? 12) / 100;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Search */}
       <View style={styles.searchBar}>
         <Text style={{ fontSize: 16, color: '#64748B', marginRight: 8 }}>🔍</Text>
@@ -87,7 +106,7 @@ export default function TransactionsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.txRow} onLongPress={() => handleClassify(item)}>
+          <TouchableOpacity style={styles.txRow} onPress={() => handleRowPress(item)} onLongPress={() => handleClassify(item)}>
             <View style={styles.txLeft}>
               <Text style={styles.txSource}>{SOURCE_LABELS[item.source] ?? '💳'}</Text>
               <View style={{ flex: 1 }}>
@@ -113,6 +132,66 @@ export default function TransactionsScreen() {
           </View>
         }
       />
+
+      <Modal visible={!!distributingTx} transparent animationType="fade" onRequestClose={() => setDistributingTx(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {distributingTx && (
+              <>
+                <Text style={styles.modalTitle}>Repartir este ingreso</Text>
+                <Text style={styles.modalAmount}>{formatCOP(distributingTx.amount)}</Text>
+                <Text style={styles.modalDesc}>{distributingTx.merchant ?? distributingTx.description}</Text>
+
+                <DistributionRow
+                  icon="💚"
+                  label="Ahorro"
+                  pct={savingsPct}
+                  amount={distributingTx.amount * savingsPct}
+                  hint="Transfiere esto a tu Fiducuenta Nu"
+                  color="#4ADE80"
+                />
+                <DistributionRow
+                  icon="🏠"
+                  label="Gastos Fijos"
+                  pct={needsPct}
+                  amount={distributingTx.amount * needsPct}
+                  hint="Arriendo, servicios, suscripciones"
+                  color="#22D3EE"
+                />
+                <DistributionRow
+                  icon="🎉"
+                  label="Gastos Variables"
+                  pct={wantsPct}
+                  amount={distributingTx.amount * wantsPct}
+                  hint="Incluye el pago de tu tarjeta Nu al corte"
+                  color="#A78BFA"
+                />
+
+                <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setDistributingTx(null)}>
+                  <Text style={styles.modalCloseBtnText}>Cerrar</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+function DistributionRow({ icon, label, pct, amount, hint, color }: {
+  icon: string; label: string; pct: number; amount: number; hint: string; color: string;
+}) {
+  return (
+    <View style={[styles.distRow, { borderLeftColor: color }]}>
+      <Text style={styles.distIcon}>{icon}</Text>
+      <View style={{ flex: 1 }}>
+        <View style={styles.distHeader}>
+          <Text style={styles.distLabel}>{label} ({Math.round(pct * 100)}%)</Text>
+          <Text style={[styles.distAmount, { color }]}>{formatCOP(amount)}</Text>
+        </View>
+        <Text style={styles.distHint}>{hint}</Text>
+      </View>
     </View>
   );
 }
@@ -136,4 +215,17 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', marginTop: 60 },
   emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyText: { fontSize: 16, color: '#64748B' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 },
+  modalCard: { backgroundColor: '#1E293B', borderRadius: 20, padding: 24, borderWidth: 1, borderColor: '#334155' },
+  modalTitle: { fontSize: 13, color: '#94A3B8', textAlign: 'center', fontWeight: '600' },
+  modalAmount: { fontSize: 28, fontWeight: '800', color: '#4ADE80', textAlign: 'center', marginTop: 4 },
+  modalDesc: { fontSize: 13, color: '#64748B', textAlign: 'center', marginBottom: 20 },
+  distRow: { flexDirection: 'row', gap: 12, backgroundColor: '#0F172A', borderRadius: 12, padding: 14, marginBottom: 10, borderLeftWidth: 3 },
+  distIcon: { fontSize: 22 },
+  distHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  distLabel: { fontSize: 13, color: '#F8FAFC', fontWeight: '700' },
+  distAmount: { fontSize: 14, fontWeight: '800' },
+  distHint: { fontSize: 11, color: '#64748B' },
+  modalCloseBtn: { marginTop: 8, paddingVertical: 12, alignItems: 'center' },
+  modalCloseBtnText: { fontSize: 14, fontWeight: '700', color: '#22D3EE' },
 });

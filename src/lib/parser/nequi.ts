@@ -1,5 +1,6 @@
 import { TransactionSource } from '../../types';
 import { ParsedTransaction } from './bancolombia';
+import { parseAmount } from './utils';
 
 export const NEQUI_SENDERS = [
   'noreply@nequi.com.co',
@@ -22,9 +23,8 @@ export function parseNequiEmail(body: string, receivedAt: string): ParsedTransac
   const amountMatch = text.match(/\$\s*([\d.,]+)/);
   if (!amountMatch) return null;
 
-  const amountStr = amountMatch[1].replace(/\./g, '').replace(',', '.');
-  const amount = parseFloat(amountStr);
-  if (isNaN(amount)) return null;
+  const amount = parseAmount(amountMatch[1]);
+  if (isNaN(amount) || amount <= 0) return null;
 
   const isCredit = /recibiste|recibió|ingresó|cargaron/i.test(text);
   const finalAmount = isCredit ? Math.abs(amount) : -Math.abs(amount);

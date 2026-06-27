@@ -1,5 +1,6 @@
 import { Tabs, Redirect } from 'expo-router';
 import { Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/stores/auth';
 
 function TabIcon({ icon, focused }: { icon: string; focused: boolean }) {
@@ -8,6 +9,7 @@ function TabIcon({ icon, focused }: { icon: string; focused: boolean }) {
 
 export default function TabsLayout() {
   const session = useAuthStore((s) => s.session);
+  const insets = useSafeAreaInsets();
   if (!session) return <Redirect href="/(auth)/login" />;
 
   return (
@@ -18,8 +20,8 @@ export default function TabsLayout() {
           backgroundColor: '#1E293B',
           borderTopColor: '#334155',
           borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
+          height: 60 + insets.bottom,
+          paddingBottom: 8 + insets.bottom,
         },
         tabBarActiveTintColor: '#22D3EE',
         tabBarInactiveTintColor: '#64748B',
@@ -45,6 +47,13 @@ export default function TabsLayout() {
         options={{
           title: 'Presupuesto',
           tabBarIcon: ({ focused }) => <TabIcon icon="🎯" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="analytics"
+        options={{
+          title: 'Analytics',
+          tabBarIcon: ({ focused }) => <TabIcon icon="📊" focused={focused} />,
         }}
       />
       <Tabs.Screen

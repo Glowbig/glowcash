@@ -1,5 +1,11 @@
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { subMonths } from 'date-fns';
 import { useBudgetStore } from '../../src/stores/budget';
+import { useAuthStore } from '../../src/stores/auth';
+import { supabase } from '../../src/lib/supabase';
+import { Transaction } from '../../src/types';
 
 function formatCOP(amount: number) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(amount);
@@ -8,8 +14,16 @@ function formatCOP(amount: number) {
 const INCOME_GROSS = 2_800_000;
 const INCOME_NET = 2_825_095;
 
+const CANDIDATE_MODELS = [
+  { id: '3_bolsillos', name: '3 Bolsillos Nu', needs: 58, wants: 30, savings: 12 },
+  { id: '50_30_20', name: '50/30/20', needs: 50, wants: 30, savings: 20 },
+];
+
 export default function BudgetScreen() {
   const { config } = useBudgetStore();
+  const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
+  const [actual, setActual] = useState<{ needs: number; wants: number; savings: number } | null>(null);
 
   const income = config?.income ?? INCOME_NET;
   const savingsPct = config?.savings_pct ?? 12;
@@ -20,8 +34,46 @@ export default function BudgetScreen() {
   const fixed = income * (fixedPct / 100);
   const wants = income * (wantsPct / 100);
 
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const since = subMonths(new Date(), 3).toISOString();
+      const { data } = await supabase
+        .from('transactions')
+        .select('*, category:categories(*)')
+        .eq('user_id', user.id)
+        .lt('amount', 0)
+        .gte('date', since);
+
+      const txs = (data as Transaction[]) ?? [];
+      const totals = { need: 0, want: 0, saving: 0 };
+      for (const t of txs) {
+        if (!t.category) continue;
+        totals[t.category.type] += Math.abs(t.amount);
+      }
+      const total = totals.need + totals.want + totals.saving;
+      if (total === 0) {
+        setActual(null);
+        return;
+      }
+      setActual({
+        needs: (totals.need / total) * 100,
+        wants: (totals.want / total) * 100,
+        savings: (totals.saving / total) * 100,
+      });
+    })();
+  }, [user]);
+
+  const bestModel = actual
+    ? CANDIDATE_MODELS.reduce((best, m) => {
+        const dist = Math.abs(m.needs - actual.needs) + Math.abs(m.wants - actual.wants) + Math.abs(m.savings - actual.savings);
+        const bestDist = Math.abs(best.needs - actual.needs) + Math.abs(best.wants - actual.wants) + Math.abs(best.savings - actual.savings);
+        return dist < bestDist ? m : best;
+      }, CANDIDATE_MODELS[0])
+    : null;
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 20 }]}>
       <Text style={styles.title}>Presupuesto mensual</Text>
       <Text style={styles.subtitle}>Modelo 3 Bolsillos Nu</Text>
 
@@ -48,13 +100,45 @@ export default function BudgetScreen() {
         </View>
       </View>
 
+      {/* Análisis de modelo ideal */}
+      {actual && bestModel && (
+        <View style={styles.analysisCard}>
+          <Text style={styles.analysisTitle}>📊 Tu modelo ideal (últimos 3 meses)</Text>
+          <Text style={styles.analysisSubtitle}>Según cómo gastas de verdad, no el modelo configurado</Text>
+
+          <View style={styles.analysisRow}>
+            <Text style={styles.analysisLabel}>Fijos</Text>
+            <Text style={styles.analysisValue}>{actual.needs.toFixed(0)}%</Text>
+          </View>
+          <View style={styles.analysisRow}>
+            <Text style={styles.analysisLabel}>Variables</Text>
+            <Text style={styles.analysisValue}>{actual.wants.toFixed(0)}%</Text>
+          </View>
+          <View style={styles.analysisRow}>
+            <Text style={styles.analysisLabel}>Ahorro</Text>
+            <Text style={styles.analysisValue}>{actual.savings.toFixed(0)}%</Text>
+          </View>
+
+          <View style={styles.analysisRecommendation}>
+            <Text style={styles.analysisRecoText}>
+              El modelo que más se parece a tu gasto real es{' '}
+              <Text style={{ fontWeight: '800', color: '#22D3EE' }}>{bestModel.name}</Text>
+              {' '}({bestModel.needs}/{bestModel.wants}/{bestModel.savings}).
+              {bestModel.id !== (config?.model ?? '3_bolsillos')
+                ? ' Puede que te convenga cambiar el modelo en Configuración.'
+                : ' Coincide con el que ya tienes configurado.'}
+            </Text>
+          </View>
+        </View>
+      )}
+
       {/* 3 bolsillos */}
       <Text style={styles.sectionTitle}>Distribución mensual</Text>
 
       <BolsilloCard
         icon="💚"
         title="Bolsillo Ahorro"
-        subtitle="Primero tú — transferir a Nu el día de pago"
+        subtitle="Primero tú — transferir a tu Fiducuenta Nu el día de pago"
         pct={savingsPct}
         amount={savings}
         color="#4ADE80"
@@ -156,4 +240,12 @@ const styles = StyleSheet.create({
   tipCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#334155', marginTop: 8 },
   tipTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC', marginBottom: 8 },
   tipText: { fontSize: 13, color: '#94A3B8', lineHeight: 20 },
+  analysisCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#334155', marginBottom: 24 },
+  analysisTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC', marginBottom: 2 },
+  analysisSubtitle: { fontSize: 12, color: '#64748B', marginBottom: 14 },
+  analysisRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#334155' },
+  analysisLabel: { fontSize: 13, color: '#94A3B8' },
+  analysisValue: { fontSize: 13, fontWeight: '700', color: '#F8FAFC' },
+  analysisRecommendation: { marginTop: 12, backgroundColor: '#0F172A', borderRadius: 10, padding: 12 },
+  analysisRecoText: { fontSize: 13, color: '#CBD5E1', lineHeight: 19 },
 });
