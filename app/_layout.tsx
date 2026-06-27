@@ -66,6 +66,8 @@ export default function RootLayout() {
         <Stack.Screen name="sms-setup" options={{ presentation: 'modal' }} />
         <Stack.Screen name="accounts" options={{ presentation: 'modal' }} />
         <Stack.Screen name="import-pdf" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="salary-setup" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="categories" options={{ presentation: 'modal' }} />
       </Stack>
     </SafeAreaProvider>
   );
