@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../src/stores/auth';
 import { supabase } from '../src/lib/supabase';
+import { useTransactionsStore } from '../src/stores/transactions';
 import { Account, Bank, AccountType } from '../src/types';
 
 function formatCOP(amount: number) {
@@ -33,16 +34,22 @@ const TYPES: { value: AccountType; label: string }[] = [
 export default function AccountsScreen() {
   const { user } = useAuthStore();
   const insets = useSafeAreaInsets();
+  const addTransaction = useTransactionsStore((s) => s.addTransaction);
+
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
   const [name, setName] = useState('');
   const [bank, setBank] = useState<Bank>('bancolombia');
   const [type, setType] = useState<AccountType>('savings');
   const [balance, setBalance] = useState('');
   const [lastFour, setLastFour] = useState('');
-  const [showForm, setShowForm] = useState(false);
+
+  const [reconcilingId, setReconcilingId] = useState<string | null>(null);
+  const [newBalanceInput, setNewBalanceInput] = useState('');
+  const [applying, setApplying] = useState(false);
 
   const fetchAccounts = async () => {
     if (!user) return;
@@ -67,6 +74,8 @@ export default function AccountsScreen() {
   };
 
   const handleEdit = (acc: Account) => {
+    setReconcilingId(null);
+    setNewBalanceInput('');
     setEditingId(acc.id);
     setName(acc.name);
     setBank(acc.bank);
@@ -112,6 +121,33 @@ export default function AccountsScreen() {
         },
       },
     ]);
+  };
+
+  const handleApplyReconcile = async (acc: Account) => {
+    const parsedNew = parseInt(newBalanceInput.replace(/[^0-9]/g, ''), 10);
+    if (isNaN(parsedNew)) return;
+    const adjustment = parsedNew - acc.balance;
+    if (Math.abs(adjustment) < 1) {
+      setReconcilingId(null);
+      setNewBalanceInput('');
+      return;
+    }
+    setApplying(true);
+    await addTransaction({
+      user_id: user!.id,
+      account_id: acc.id,
+      amount: adjustment,
+      description: `Ajuste de balance · ${acc.name}`,
+      source: 'manual',
+      date: new Date().toISOString(),
+      is_pending: false,
+      raw_text: `Saldo previo: ${acc.balance}. Saldo nuevo: ${parsedNew}.`,
+    });
+    await supabase.from('accounts').update({ balance: parsedNew }).eq('id', acc.id);
+    await fetchAccounts();
+    setReconcilingId(null);
+    setNewBalanceInput('');
+    setApplying(false);
   };
 
   const total = accounts.reduce((s, a) => s + (a.type === 'credit' ? 0 : a.balance), 0);
@@ -225,20 +261,79 @@ export default function AccountsScreen() {
 
         {accounts.map((acc) => {
           const bankInfo = BANKS.find((b) => b.value === acc.bank);
+          const isReconciling = reconcilingId === acc.id;
+          const parsedNew = parseInt(newBalanceInput.replace(/[^0-9]/g, ''), 10);
+          const adjustment = !isNaN(parsedNew) ? parsedNew - acc.balance : 0;
+
           return (
-            <TouchableOpacity key={acc.id} style={styles.accountCard} onPress={() => handleEdit(acc)}>
-              <Text style={styles.accountIcon}>{bankInfo?.icon ?? '🏦'}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.accountName}>{acc.name}</Text>
-                <Text style={styles.accountMeta}>
-                  {TYPES.find((t) => t.value === acc.type)?.label}
-                  {acc.last_four ? ` · *${acc.last_four}` : ''}
-                </Text>
+            <View key={acc.id} style={styles.accountWrapper}>
+              <View style={styles.accountCard}>
+                <Text style={styles.accountIcon}>{bankInfo?.icon ?? '🏦'}</Text>
+                <TouchableOpacity style={{ flex: 1 }} onPress={() => handleEdit(acc)}>
+                  <Text style={styles.accountName}>{acc.name}</Text>
+                  <Text style={styles.accountMeta}>
+                    {TYPES.find((t) => t.value === acc.type)?.label}
+                    {acc.last_four ? ` · *${acc.last_four}` : ''}
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.accountRight}>
+                  <Text style={[styles.accountBalance, acc.type === 'credit' && { color: '#F87171' }]}>
+                    {formatCOP(acc.balance)}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (isReconciling) {
+                        setReconcilingId(null);
+                        setNewBalanceInput('');
+                      } else {
+                        setReconcilingId(acc.id);
+                        setNewBalanceInput('');
+                        setShowForm(false);
+                      }
+                    }}
+                  >
+                    <Text style={[styles.reconcileTrigger, isReconciling && styles.reconcileTriggerCancel]}>
+                      {isReconciling ? 'Cancelar' : 'Actualizar saldo'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <Text style={[styles.accountBalance, acc.type === 'credit' && { color: '#F87171' }]}>
-                {formatCOP(acc.balance)}
-              </Text>
-            </TouchableOpacity>
+
+              {isReconciling && (
+                <View style={styles.reconcileForm}>
+                  <Text style={styles.reconcileCurrentText}>
+                    Balance en Glowcash: <Text style={{ color: '#CBD5E1', fontWeight: '700' }}>{formatCOP(acc.balance)}</Text>
+                  </Text>
+                  <TextInput
+                    style={styles.reconcileInput}
+                    placeholder="Saldo real en tu banco hoy"
+                    placeholderTextColor="#64748B"
+                    value={newBalanceInput}
+                    onChangeText={setNewBalanceInput}
+                    keyboardType="numeric"
+                    autoFocus
+                  />
+                  {newBalanceInput.length > 0 && !isNaN(parsedNew) && (
+                    <Text style={[styles.reconcileAdjust, { color: adjustment >= 0 ? '#4ADE80' : '#F87171' }]}>
+                      Ajuste: {adjustment >= 0 ? '+' : ''}{formatCOP(adjustment)}
+                    </Text>
+                  )}
+                  <TouchableOpacity
+                    style={[
+                      styles.reconcileApplyBtn,
+                      (applying || !newBalanceInput || Math.abs(adjustment) < 1) && styles.btnDisabled,
+                    ]}
+                    onPress={() => handleApplyReconcile(acc)}
+                    disabled={applying || !newBalanceInput || Math.abs(adjustment) < 1}
+                  >
+                    {applying
+                      ? <ActivityIndicator size="small" color="#0F172A" />
+                      : <Text style={styles.reconcileApplyBtnText}>Aplicar ajuste</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           );
         })}
       </ScrollView>
@@ -276,9 +371,29 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyText: { fontSize: 16, fontWeight: '700', color: '#F8FAFC', marginBottom: 4 },
   emptySubtext: { fontSize: 13, color: '#64748B', textAlign: 'center' },
-  accountCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#1E293B', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#334155' },
+  // Account card
+  accountWrapper: { marginBottom: 10 },
+  accountCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#1E293B', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#334155' },
   accountIcon: { fontSize: 24 },
   accountName: { fontSize: 14, fontWeight: '700', color: '#F8FAFC' },
   accountMeta: { fontSize: 12, color: '#64748B', marginTop: 2 },
+  accountRight: { alignItems: 'flex-end', gap: 4 },
   accountBalance: { fontSize: 15, fontWeight: '800', color: '#4ADE80' },
+  reconcileTrigger: { fontSize: 11, fontWeight: '700', color: '#22D3EE' },
+  reconcileTriggerCancel: { color: '#64748B' },
+  // Reconcile form
+  reconcileForm: {
+    backgroundColor: '#1E293B', borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
+    borderWidth: 1, borderTopWidth: 0, borderColor: '#334155',
+    padding: 16, gap: 10,
+  },
+  reconcileCurrentText: { fontSize: 12, color: '#64748B' },
+  reconcileInput: {
+    backgroundColor: '#0F172A', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 16, color: '#F8FAFC', borderWidth: 1, borderColor: '#334155',
+  },
+  reconcileAdjust: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  reconcileApplyBtn: { backgroundColor: '#22D3EE', borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
+  reconcileApplyBtnText: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  btnDisabled: { opacity: 0.4 },
 });

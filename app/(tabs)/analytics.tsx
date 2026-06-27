@@ -19,6 +19,7 @@ export default function AnalyticsScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [config, setConfig] = useState<BudgetConfig | null>(null);
+  const [carryover, setCarryover] = useState(0);
   const insets = useSafeAreaInsets();
   const [history, setHistory] = useState<{ month: string; total: number }[]>([]);
 
@@ -49,6 +50,21 @@ export default function AnalyticsScreen() {
       .gte('date', from)
       .lte('date', to)
       .then(({ data }) => setTransactions((data as Transaction[]) ?? []));
+  }, [user, month]);
+
+  // Saldo acumulado de todos los meses anteriores al seleccionado
+  useEffect(() => {
+    if (!user) return;
+    const firstOfMonth = startOfMonth(month).toISOString();
+    supabase
+      .from('transactions')
+      .select('amount')
+      .eq('user_id', user.id)
+      .lt('date', firstOfMonth)
+      .then(({ data }) => {
+        const sum = (data ?? []).reduce((s, t) => s + t.amount, 0);
+        setCarryover(sum);
+      });
   }, [user, month]);
 
   // Last 6 months evolution
@@ -83,6 +99,7 @@ export default function AnalyticsScreen() {
   const totalIncome = transactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
   const totalExpenses = transactions.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
   const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0;
+  const periodBalance = carryover + totalIncome - totalExpenses;
 
   const byType = useMemo(() => {
     const groups = { need: 0, want: 0, saving: 0 };
@@ -120,17 +137,48 @@ export default function AnalyticsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Saldo inicial (carryover de meses anteriores) */}
+      {carryover !== 0 && (
+        <View style={[styles.carryoverCard, { borderColor: carryover > 0 ? '#166534' : '#7F1D1D' }]}>
+          <Text style={styles.carryoverLabel}>Saldo inicial (meses anteriores)</Text>
+          <Text style={[styles.carryoverValue, { color: carryover > 0 ? '#4ADE80' : '#F87171' }]}>
+            {carryover >= 0 ? '+' : ''}{formatCOP(carryover)}
+          </Text>
+          {totalIncome === 0 && carryover > 0 && (
+            <Text style={styles.carryoverNote}>
+              Sin ingresos registrados este mes. Tu saldo incluye la nómina del mes anterior.
+            </Text>
+          )}
+        </View>
+      )}
+
       {/* Summary */}
       <View style={styles.summaryRow}>
         <SummaryCard label="Ingresos" value={formatCOP(totalIncome)} color="#4ADE80" />
         <SummaryCard label="Gastos" value={formatCOP(totalExpenses)} color="#F87171" />
       </View>
-      <View style={styles.savingsCard}>
-        <Text style={styles.savingsLabel}>Tasa de ahorro del mes</Text>
-        <Text style={[styles.savingsValue, { color: savingsRate >= 12 ? '#4ADE80' : '#FBBF24' }]}>
-          {savingsRate.toFixed(1)}%
+
+      {/* Balance del periodo = carryover + ingresos - gastos */}
+      <View style={[styles.periodCard, { borderColor: periodBalance >= 0 ? '#166534' : '#7F1D1D' }]}>
+        <Text style={styles.periodLabel}>Balance del periodo</Text>
+        <Text style={[styles.periodValue, { color: periodBalance >= 0 ? '#4ADE80' : '#F87171' }]}>
+          {periodBalance >= 0 ? '+' : ''}{formatCOP(periodBalance)}
         </Text>
+        {carryover !== 0 && (
+          <Text style={styles.periodBreakdown}>
+            {formatCOP(carryover)} inicial{totalIncome > 0 ? ` + ${formatCOP(totalIncome)} ingresos` : ''}{totalExpenses > 0 ? ` − ${formatCOP(totalExpenses)} gastos` : ''}
+          </Text>
+        )}
       </View>
+
+      {totalIncome > 0 && (
+        <View style={styles.savingsCard}>
+          <Text style={styles.savingsLabel}>Tasa de ahorro del mes</Text>
+          <Text style={[styles.savingsValue, { color: savingsRate >= 12 ? '#4ADE80' : '#FBBF24' }]}>
+            {savingsRate.toFixed(1)}%
+          </Text>
+        </View>
+      )}
 
       {/* 3 Bolsillos comparison */}
       <Text style={styles.sectionTitle}>Necesidades / Gustos / Ahorro</Text>
@@ -219,10 +267,28 @@ const styles = StyleSheet.create({
   monthArrow: { paddingHorizontal: 18, paddingVertical: 12 },
   monthArrowText: { fontSize: 20, color: '#22D3EE', fontWeight: '700' },
   monthText: { fontSize: 15, fontWeight: '700', color: '#F8FAFC', textTransform: 'capitalize' },
+  // Carryover card
+  carryoverCard: {
+    backgroundColor: '#1E293B', borderRadius: 14, padding: 16, borderWidth: 1,
+    marginBottom: 12, alignItems: 'center', gap: 4,
+  },
+  carryoverLabel: { fontSize: 11, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 },
+  carryoverValue: { fontSize: 22, fontWeight: '800' },
+  carryoverNote: { fontSize: 11, color: '#94A3B8', textAlign: 'center', marginTop: 2 },
+  // Summary
   summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   summaryCard: { flex: 1, backgroundColor: '#1E293B', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#334155' },
   summaryLabel: { fontSize: 12, color: '#64748B', marginBottom: 6 },
   summaryValue: { fontSize: 18, fontWeight: '800' },
+  // Period balance card
+  periodCard: {
+    backgroundColor: '#1E293B', borderRadius: 14, padding: 16, borderWidth: 1,
+    marginBottom: 12, alignItems: 'center', gap: 4,
+  },
+  periodLabel: { fontSize: 11, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 },
+  periodValue: { fontSize: 26, fontWeight: '800' },
+  periodBreakdown: { fontSize: 11, color: '#475569', textAlign: 'center' },
+  // Savings rate (only when income > 0)
   savingsCard: { backgroundColor: '#1E293B', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#334155', marginBottom: 24, alignItems: 'center' },
   savingsLabel: { fontSize: 12, color: '#64748B', marginBottom: 4 },
   savingsValue: { fontSize: 26, fontWeight: '800' },

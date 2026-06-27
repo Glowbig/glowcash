@@ -8,6 +8,8 @@ import { useAuthStore } from '../src/stores/auth';
 import { useTransactionsStore } from '../src/stores/transactions';
 import { importBankSms, isSmsReadingAvailable } from '../src/lib/sms';
 import { getLastSyncTimestamp, saveLastSyncTimestamp } from '../src/lib/syncState';
+import { isNotificationListenerAvailable, addNotificationListener } from '../src/lib/notificationListener';
+import { parseFinancialNotification } from '../src/lib/notificationParser';
 
 export default function RootLayout() {
   const setSession = useAuthStore((s) => s.setSession);
@@ -54,6 +56,26 @@ export default function RootLayout() {
     })();
   }, [user?.id]);
 
+  // Real-time: intercept push notifications from Nu, Nequi, Bancolombia apps
+  useEffect(() => {
+    if (!user || !isNotificationListenerAvailable()) return;
+    const unsub = addNotificationListener(async ({ title, text, packageName }) => {
+      const tx = parseFinancialNotification(title, text, packageName);
+      if (!tx) return;
+      await addTransaction({
+        user_id: user.id,
+        amount: tx.amount,
+        description: tx.description,
+        merchant: tx.merchant,
+        date: tx.date,
+        source: 'notification',
+        raw_text: tx.raw_text,
+        is_pending: false,
+      });
+    });
+    return unsub;
+  }, [user?.id]);
+
   return (
     <SafeAreaProvider>
       <StatusBar style="auto" />
@@ -68,6 +90,7 @@ export default function RootLayout() {
         <Stack.Screen name="import-pdf" options={{ presentation: 'modal' }} />
         <Stack.Screen name="salary-setup" options={{ presentation: 'modal' }} />
         <Stack.Screen name="categories" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="notification-setup" options={{ presentation: 'modal' }} />
       </Stack>
     </SafeAreaProvider>
   );

@@ -1,6 +1,6 @@
 export type Bank = 'bancolombia' | 'nequi' | 'nu' | 'davivienda' | 'cash' | 'other';
 export type AccountType = 'checking' | 'savings' | 'credit' | 'cash' | 'wallet';
-export type TransactionSource = 'email' | 'sms' | 'manual' | 'api' | 'pdf';
+export type TransactionSource = 'email' | 'sms' | 'manual' | 'api' | 'pdf' | 'notification';
 export type CategoryType = 'need' | 'want' | 'saving';
 export type BudgetModel = '50_30_20' | '3_bolsillos' | 'custom';
 export type PayCycle = 'monthly' | 'biweekly' | 'bimonthly' | 'daily_labor';

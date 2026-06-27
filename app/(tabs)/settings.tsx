@@ -7,7 +7,23 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/stores/auth';
 import { supabase } from '../../src/lib/supabase';
+import { getLastSyncTimestamp } from '../../src/lib/syncState';
+import {
+  isNotificationListenerAvailable,
+  isNotificationListenerEnabled,
+} from '../../src/lib/notificationListener';
 import { PayCycle } from '../../src/types';
+
+function formatSyncAge(ts: number | null): string {
+  if (!ts) return 'Nunca';
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return 'Ahora mismo';
+  if (mins < 60) return `Hace ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `Hace ${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  return `Hace ${days}d`;
+}
 
 const PAY_CYCLES: { value: PayCycle; label: string; desc: string }[] = [
   { value: 'monthly', label: 'Mensual', desc: 'Un pago al mes' },
@@ -26,6 +42,9 @@ export default function SettingsScreen() {
 
   const [payCycle, setPayCycle] = useState<PayCycle>('monthly');
   const [budgetConfigId, setBudgetConfigId] = useState<string | null>(null);
+  const [lastSmsSync, setLastSmsSync] = useState<number | null>(null);
+  const [lastGmailSync, setLastGmailSync] = useState<number | null>(null);
+  const [notifEnabled, setNotifEnabled] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -47,6 +66,12 @@ export default function SettingsScreen() {
       .then(({ data }) => {
         if (data) { setBudgetConfigId(data.id); setPayCycle((data.pay_cycle as PayCycle) ?? 'monthly'); }
       });
+
+    getLastSyncTimestamp('sms').then(setLastSmsSync);
+    getLastSyncTimestamp('gmail').then(setLastGmailSync);
+    if (isNotificationListenerAvailable()) {
+      isNotificationListenerEnabled().then(setNotifEnabled);
+    }
   }, [user]);
 
   const handlePayCycleChange = async (cycle: PayCycle) => {
@@ -154,6 +179,13 @@ export default function SettingsScreen() {
           <View style={styles.card}>
             <RowAction icon="📧" label="Conectar Gmail" onPress={() => router.push('/import')} />
             <RowAction icon="💬" label="Permisos SMS" onPress={() => router.push('/sms-setup')} />
+            <RowActionBadge
+              icon="🔔"
+              label="Notificaciones bancarias"
+              badge={isNotificationListenerAvailable() ? (notifEnabled ? 'Activo' : 'Inactivo') : 'Solo Android'}
+              badgeActive={notifEnabled}
+              onPress={() => router.push('/notification-setup')}
+            />
             <RowAction icon="📄" label="Importar extracto PDF" onPress={() => router.push('/import-pdf')} />
           </View>
         </View>
@@ -197,9 +229,24 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Última sincronización</Text>
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <Text style={styles.rowIcon}>💬</Text>
+              <Text style={[styles.rowLabel, { flex: 1 }]}>SMS bancarios</Text>
+              <Text style={styles.rowValue}>{formatSyncAge(lastSmsSync)}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowIcon}>📧</Text>
+              <Text style={[styles.rowLabel, { flex: 1 }]}>Gmail</Text>
+              <Text style={styles.rowValue}>{formatSyncAge(lastGmailSync)}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionLabel}>App</Text>
           <View style={styles.card}>
-            <RowAction icon="🔔" label="Notificaciones" onPress={() => {}} />
             <RowAction icon="🎨" label="Apariencia" onPress={() => {}} />
           </View>
         </View>
@@ -230,6 +277,23 @@ function RowAction({ icon, label, onPress }: { icon: string; label: string; onPr
       <Text style={styles.rowIcon}>{icon}</Text>
       <Text style={[styles.rowLabel, { flex: 1 }]}>{label}</Text>
       <Text style={{ color: '#64748B', fontSize: 16 }}>›</Text>
+    </TouchableOpacity>
+  );
+}
+
+function RowActionBadge({
+  icon, label, badge, badgeActive, onPress,
+}: {
+  icon: string; label: string; badge: string; badgeActive: boolean; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.row} onPress={onPress}>
+      <Text style={styles.rowIcon}>{icon}</Text>
+      <Text style={[styles.rowLabel, { flex: 1 }]}>{label}</Text>
+      <Text style={[styles.badge, badgeActive ? styles.badgeActive : styles.badgeInactive]}>
+        {badge}
+      </Text>
+      <Text style={{ color: '#64748B', fontSize: 16, marginLeft: 6 }}>›</Text>
     </TouchableOpacity>
   );
 }
@@ -267,6 +331,10 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.4 },
   cedulaSaveBtnText: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
   cedulaClearBtn: { fontSize: 12, color: '#F87171', textAlign: 'right' },
+  // Badge
+  badge: { fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  badgeActive: { backgroundColor: '#14532D', color: '#4ADE80' },
+  badgeInactive: { backgroundColor: '#1E293B', color: '#64748B' },
   // Sign out
   signOutBtn: { backgroundColor: '#1E293B', borderRadius: 14, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: '#F87171', marginTop: 12 },
   signOutText: { color: '#F87171', fontSize: 16, fontWeight: '700' },

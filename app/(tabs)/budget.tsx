@@ -5,34 +5,76 @@ import { subMonths } from 'date-fns';
 import { useBudgetStore } from '../../src/stores/budget';
 import { useAuthStore } from '../../src/stores/auth';
 import { supabase } from '../../src/lib/supabase';
-import { Transaction } from '../../src/types';
+import { Transaction, BudgetConfig, PayCycle } from '../../src/types';
 
 function formatCOP(amount: number) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(amount);
 }
-
-const INCOME_GROSS = 2_800_000;
-const INCOME_NET = 2_825_095;
 
 const CANDIDATE_MODELS = [
   { id: '3_bolsillos', name: '3 Bolsillos Nu', needs: 58, wants: 30, savings: 12 },
   { id: '50_30_20', name: '50/30/20', needs: 50, wants: 30, savings: 20 },
 ];
 
+const CYCLE_LABELS: Record<PayCycle, string> = {
+  monthly: 'mensual',
+  biweekly: 'por quincena',
+  bimonthly: 'cada 14 días',
+  daily_labor: 'diario',
+};
+
+// How many cycles per month (approximate)
+const CYCLES_PER_MONTH: Record<PayCycle, number> = {
+  monthly: 1,
+  biweekly: 2,
+  bimonthly: 26 / 12,  // ~2.17 cycles/month
+  daily_labor: 30,
+};
+
 export default function BudgetScreen() {
-  const { config } = useBudgetStore();
+  const { config: storeConfig, setConfig } = useBudgetStore();
   const { user } = useAuthStore();
   const insets = useSafeAreaInsets();
   const [actual, setActual] = useState<{ needs: number; wants: number; savings: number } | null>(null);
+  const [config, setLocalConfig] = useState<BudgetConfig | null>(storeConfig);
 
-  const income = config?.income ?? INCOME_NET;
+  // Load budget_config from Supabase if not in store
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('budget_config')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setLocalConfig(data as BudgetConfig);
+          setConfig(data as BudgetConfig);
+        }
+      });
+  }, [user]);
+
+  useEffect(() => {
+    if (storeConfig) setLocalConfig(storeConfig);
+  }, [storeConfig]);
+
+  const income = config?.income ?? 2_825_095;
   const savingsPct = config?.savings_pct ?? 12;
   const fixedPct = config?.needs_pct ?? 58;
   const wantsPct = config?.wants_pct ?? 30;
+  const payCycle: PayCycle = (config?.pay_cycle as PayCycle) ?? 'monthly';
 
   const savings = income * (savingsPct / 100);
   const fixed = income * (fixedPct / 100);
   const wants = income * (wantsPct / 100);
+
+  const cyclesPerMonth = CYCLES_PER_MONTH[payCycle];
+  const cycleIncome = income / cyclesPerMonth;
+  const cycleSavings = savings / cyclesPerMonth;
+  const cycleFixed = fixed / cyclesPerMonth;
+  const cycleWants = wants / cyclesPerMonth;
+
+  const showCycleBreakdown = payCycle !== 'monthly';
 
   useEffect(() => {
     if (!user) return;
@@ -52,10 +94,7 @@ export default function BudgetScreen() {
         totals[t.category.type] += Math.abs(t.amount);
       }
       const total = totals.need + totals.want + totals.saving;
-      if (total === 0) {
-        setActual(null);
-        return;
-      }
+      if (total === 0) { setActual(null); return; }
       setActual({
         needs: (totals.need / total) * 100,
         wants: (totals.want / total) * 100,
@@ -74,30 +113,21 @@ export default function BudgetScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingTop: insets.top + 20 }]}>
-      <Text style={styles.title}>Presupuesto mensual</Text>
-      <Text style={styles.subtitle}>Modelo 3 Bolsillos Nu</Text>
+      <Text style={styles.title}>Presupuesto</Text>
+      <Text style={styles.subtitle}>{config?.model === '50_30_20' ? '50/30/20' : '3 Bolsillos Nu'} · {CYCLE_LABELS[payCycle]}</Text>
 
-      {/* Salary breakdown */}
-      <View style={styles.salaryCard}>
-        <Text style={styles.salaryLabel}>Salario bruto</Text>
-        <Text style={styles.salaryGross}>{formatCOP(INCOME_GROSS)}</Text>
-        <View style={styles.deductionRow}>
-          <Text style={styles.deductionLabel}>Salud (4%)</Text>
-          <Text style={styles.deductionValue}>- {formatCOP(112_000)}</Text>
+      {/* Income card */}
+      <View style={styles.incomeCard}>
+        <View style={styles.incomeRow}>
+          <Text style={styles.incomeLabel}>Salario neto</Text>
+          <Text style={styles.incomeValue}>{formatCOP(income)}</Text>
         </View>
-        <View style={styles.deductionRow}>
-          <Text style={styles.deductionLabel}>Pensión (4%)</Text>
-          <Text style={styles.deductionValue}>- {formatCOP(112_000)}</Text>
-        </View>
-        <View style={styles.deductionRow}>
-          <Text style={styles.deductionLabel}>Subsidio transporte</Text>
-          <Text style={[styles.deductionValue, { color: '#4ADE80' }]}>+ {formatCOP(249_095)}</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.deductionRow}>
-          <Text style={[styles.deductionLabel, { color: '#F8FAFC', fontWeight: '700' }]}>Salario neto</Text>
-          <Text style={[styles.deductionValue, { color: '#22D3EE', fontWeight: '700', fontSize: 18 }]}>{formatCOP(INCOME_NET)}</Text>
-        </View>
+        {showCycleBreakdown && (
+          <View style={[styles.incomeRow, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#334155' }]}>
+            <Text style={styles.incomeCycleLabel}>Cada pago ({CYCLE_LABELS[payCycle]})</Text>
+            <Text style={styles.incomeCycleValue}>{formatCOP(cycleIncome)}</Text>
+          </View>
+        )}
       </View>
 
       {/* Análisis de modelo ideal */}
@@ -133,7 +163,7 @@ export default function BudgetScreen() {
       )}
 
       {/* 3 bolsillos */}
-      <Text style={styles.sectionTitle}>Distribución mensual</Text>
+      <Text style={styles.sectionTitle}>Distribución</Text>
 
       <BolsilloCard
         icon="💚"
@@ -141,11 +171,13 @@ export default function BudgetScreen() {
         subtitle="Primero tú — transferir a tu Fiducuenta Nu el día de pago"
         pct={savingsPct}
         amount={savings}
+        cycleAmount={showCycleBreakdown ? cycleSavings : undefined}
+        cycleLabel={CYCLE_LABELS[payCycle]}
         color="#4ADE80"
         tips={[
           'Transfiere el mismo día que recibes el sueldo',
           'No lo toques — es para emergencias e inversión',
-          `Meta fondo emergencia: ${formatCOP(8_475_285)}`,
+          `Meta fondo emergencia: ${formatCOP(income * 3)}`,
         ]}
       />
 
@@ -155,6 +187,8 @@ export default function BudgetScreen() {
         subtitle="Obligaciones del mes"
         pct={fixedPct}
         amount={fixed}
+        cycleAmount={showCycleBreakdown ? cycleFixed : undefined}
+        cycleLabel={CYCLE_LABELS[payCycle]}
         color="#22D3EE"
         tips={[
           'Arriendo / cuota vivienda',
@@ -169,6 +203,8 @@ export default function BudgetScreen() {
         subtitle="Comida, transporte, entretenimiento, tarjeta Nu"
         pct={wantsPct}
         amount={wants}
+        cycleAmount={showCycleBreakdown ? cycleWants : undefined}
+        cycleLabel={CYCLE_LABELS[payCycle]}
         color="#A78BFA"
         tips={[
           'Mercado y restaurantes',
@@ -189,9 +225,9 @@ export default function BudgetScreen() {
   );
 }
 
-function BolsilloCard({ icon, title, subtitle, pct, amount, color, tips }: {
+function BolsilloCard({ icon, title, subtitle, pct, amount, cycleAmount, cycleLabel, color, tips }: {
   icon: string; title: string; subtitle: string; pct: number;
-  amount: number; color: string; tips: string[];
+  amount: number; cycleAmount?: number; cycleLabel: string; color: string; tips: string[];
 }) {
   return (
     <View style={[styles.bolsilloCard, { borderLeftColor: color }]}>
@@ -202,8 +238,11 @@ function BolsilloCard({ icon, title, subtitle, pct, amount, color, tips }: {
           <Text style={styles.bolsilloSubtitle}>{subtitle}</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={[styles.bolsilloAmount, { color }]}>{new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(amount)}</Text>
-          <Text style={styles.bolsilloPct}>{pct}%</Text>
+          <Text style={[styles.bolsilloAmount, { color }]}>{formatCOP(amount)}</Text>
+          <Text style={styles.bolsilloPct}>{pct}% mensual</Text>
+          {cycleAmount !== undefined && (
+            <Text style={[styles.bolsilloCycle, { color }]}>{formatCOP(cycleAmount)} {cycleLabel}</Text>
+          )}
         </View>
       </View>
       <View style={styles.bolsilloTips}>
@@ -219,28 +258,28 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
   content: { padding: 20, paddingBottom: 40 },
   title: { fontSize: 24, fontWeight: '800', color: '#F8FAFC', marginBottom: 4 },
-  subtitle: { fontSize: 14, color: '#64748B', marginBottom: 24 },
+  subtitle: { fontSize: 14, color: '#64748B', marginBottom: 20 },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#F8FAFC', marginBottom: 12, marginTop: 8 },
-  salaryCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: '#334155' },
-  salaryLabel: { fontSize: 12, color: '#64748B', marginBottom: 4 },
-  salaryGross: { fontSize: 24, fontWeight: '700', color: '#94A3B8', marginBottom: 12 },
-  deductionRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  deductionLabel: { fontSize: 14, color: '#64748B' },
-  deductionValue: { fontSize: 14, color: '#F87171', fontWeight: '500' },
-  divider: { height: 1, backgroundColor: '#334155', marginVertical: 10 },
+  incomeCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 18, marginBottom: 20, borderWidth: 1, borderColor: '#334155' },
+  incomeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  incomeLabel: { fontSize: 14, color: '#64748B' },
+  incomeValue: { fontSize: 22, fontWeight: '800', color: '#22D3EE' },
+  incomeCycleLabel: { fontSize: 13, color: '#475569' },
+  incomeCycleValue: { fontSize: 16, fontWeight: '700', color: '#94A3B8' },
   bolsilloCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 18, marginBottom: 14, borderLeftWidth: 4, borderWidth: 1, borderColor: '#334155' },
-  bolsilloHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  bolsilloHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   bolsilloIcon: { fontSize: 28 },
   bolsilloTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC' },
   bolsilloSubtitle: { fontSize: 12, color: '#64748B', marginTop: 2 },
   bolsilloAmount: { fontSize: 18, fontWeight: '800' },
-  bolsilloPct: { fontSize: 12, color: '#64748B', marginTop: 2 },
+  bolsilloPct: { fontSize: 11, color: '#64748B', marginTop: 2 },
+  bolsilloCycle: { fontSize: 12, fontWeight: '700', marginTop: 4, opacity: 0.9 },
   bolsilloTips: { gap: 4 },
   bolsilloTip: { fontSize: 13, color: '#94A3B8' },
   tipCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#334155', marginTop: 8 },
   tipTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC', marginBottom: 8 },
   tipText: { fontSize: 13, color: '#94A3B8', lineHeight: 20 },
-  analysisCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#334155', marginBottom: 24 },
+  analysisCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#334155', marginBottom: 20 },
   analysisTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC', marginBottom: 2 },
   analysisSubtitle: { fontSize: 12, color: '#64748B', marginBottom: 14 },
   analysisRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#334155' },

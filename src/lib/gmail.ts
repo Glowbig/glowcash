@@ -102,7 +102,7 @@ export async function importBankEmails(
 ): Promise<ImportResult> {
   // Primary: match by sender. Secondary: subject keywords for unknown sender addresses.
   const senderQuery = ALL_SENDERS.map((s) => `from:${s}`).join(' OR ');
-  const subjectQuery = 'subject:(alerta movimiento transacción pago transferencia Bancolombia Nequi)';
+  const subjectQuery = 'subject:(alerta movimiento transacción pago transferencia Bancolombia Nequi "compra aprobada" APROBADA "Tu compra en")';
 
   let timeFilter: string;
   if (since) {

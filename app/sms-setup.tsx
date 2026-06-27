@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../src/stores/auth';
 import { useTransactionsStore } from '../src/stores/transactions';
 import { importBankSms, isSmsReadingAvailable } from '../src/lib/sms';
+import { getLastSyncTimestamp, saveLastSyncTimestamp } from '../src/lib/syncState';
 
 type PermissionStatus = 'unknown' | 'granted' | 'denied';
 
@@ -48,7 +49,8 @@ export default function SmsSetupScreen() {
     setResult(null);
 
     try {
-      const { parsed, unparsed } = await importBankSms();
+      const lastSync = await getLastSyncTimestamp('sms');
+      const { parsed, unparsed } = await importBankSms(lastSync ?? undefined);
 
       let imported = 0;
       let duplicates = 0;
@@ -68,6 +70,7 @@ export default function SmsSetupScreen() {
         else duplicates++;
       }
 
+      await saveLastSyncTimestamp('sms');
       setResult({ imported, duplicates, unparsed });
     } catch (e: any) {
       setError(e.message ?? 'Error al leer los SMS.');

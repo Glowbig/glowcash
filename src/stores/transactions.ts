@@ -35,14 +35,36 @@ export const useTransactionsStore = create<TransactionsState>((set, get) => ({
   addTransaction: async (tx) => {
     const hash = await computeHash(tx.date, tx.amount, tx.description);
 
-    // Check for duplicate
+    // Primary dedup: exact hash match (same date + amount + description)
     const { data: existing } = await supabase
       .from('transactions')
       .select('id')
       .eq('hash', hash)
       .maybeSingle();
 
-    if (existing) return null; // duplicate — skip
+    if (existing) return null;
+
+    // Secondary dedup: same user + same calendar day + exact same amount.
+    // Catches cross-source duplicates where SMS and email parse different descriptions
+    // from the same bank transaction. Exempt manual entries (user controls those).
+    if (tx.source !== 'manual') {
+      const dateOnly = tx.date.substring(0, 10); // YYYY-MM-DD
+      const nextDate = new Date(dateOnly + 'T00:00:00.000Z');
+      nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+      const nextDateStr = nextDate.toISOString().substring(0, 10);
+
+      const { data: sameDay } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('user_id', tx.user_id)
+        .eq('amount', tx.amount)
+        .gte('date', dateOnly + 'T00:00:00.000Z')
+        .lt('date', nextDateStr + 'T00:00:00.000Z')
+        .neq('source', 'manual')
+        .maybeSingle();
+
+      if (sameDay) return null;
+    }
 
     const { data, error } = await supabase
       .from('transactions')
