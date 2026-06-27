@@ -90,16 +90,32 @@ export interface ImportResult {
 /**
  * Searches Gmail for messages from known Colombian bank senders and parses each
  * one into a transaction. Uses pagination to fetch all results (Gmail caps at
- * 500 per page). Searches last 365 days to get full year history on first import.
+ * 500 per page).
+ *
+ * @param since - If provided, only search from (since - 1 day) to avoid missing
+ *   messages near the boundary. If null, searches last 365 days (full history).
  */
 export async function importBankEmails(
   accessToken: string,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  since?: Date | null
 ): Promise<ImportResult> {
-  // Primary: match by sender. Secondary: subject keywords as fallback for unknown sender addresses.
+  // Primary: match by sender. Secondary: subject keywords for unknown sender addresses.
   const senderQuery = ALL_SENDERS.map((s) => `from:${s}`).join(' OR ');
   const subjectQuery = 'subject:(alerta movimiento transacción pago transferencia Bancolombia Nequi)';
-  const query = `(${senderQuery} OR ${subjectQuery}) newer_than:365d`;
+
+  let timeFilter: string;
+  if (since) {
+    const safeDate = new Date(since.getTime() - 24 * 60 * 60 * 1000); // 1 day overlap
+    const yyyy = safeDate.getFullYear();
+    const mm = String(safeDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(safeDate.getDate()).padStart(2, '0');
+    timeFilter = `after:${yyyy}/${mm}/${dd}`;
+  } else {
+    timeFilter = 'newer_than:365d';
+  }
+
+  const query = `(${senderQuery} OR ${subjectQuery}) ${timeFilter}`;
 
   // Paginate through all results — Gmail API maxResults is 500 per page.
   const messages: GmailMessageRef[] = [];

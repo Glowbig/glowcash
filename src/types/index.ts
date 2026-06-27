@@ -3,6 +3,7 @@ export type AccountType = 'checking' | 'savings' | 'credit' | 'cash' | 'wallet';
 export type TransactionSource = 'email' | 'sms' | 'manual' | 'api' | 'pdf';
 export type CategoryType = 'need' | 'want' | 'saving';
 export type BudgetModel = '50_30_20' | '3_bolsillos' | 'custom';
+export type PayCycle = 'monthly' | 'biweekly' | 'bimonthly' | 'daily_labor';
 export type AlertType = 'budget_exceeded' | 'unusual_spending' | 'nu_payment_due' | 'saving_reminder' | 'tip';
 
 export interface Account {
@@ -61,6 +62,7 @@ export interface BudgetConfig {
   income: number;
   model: BudgetModel;
   period: 'monthly' | 'biweekly';
+  pay_cycle: PayCycle;
   needs_pct: number;
   wants_pct: number;
   savings_pct: number;

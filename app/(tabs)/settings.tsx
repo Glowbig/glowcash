@@ -7,6 +7,14 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/stores/auth';
 import { supabase } from '../../src/lib/supabase';
+import { PayCycle } from '../../src/types';
+
+const PAY_CYCLES: { value: PayCycle; label: string; desc: string }[] = [
+  { value: 'monthly', label: 'Mensual', desc: 'Un pago al mes' },
+  { value: 'biweekly', label: 'Quincenal', desc: 'Días 1 y 15' },
+  { value: 'bimonthly', label: 'Catorcenal', desc: 'Cada 14 días (jueves)' },
+  { value: 'daily_labor', label: 'Diario', desc: 'Pago por jornal' },
+];
 
 export default function SettingsScreen() {
   const { user, signOut } = useAuthStore();
@@ -15,6 +23,9 @@ export default function SettingsScreen() {
   const [cedulaInput, setCedulaInput] = useState('');
   const [cedulaId, setCedulaId] = useState<string | null>(null);
   const [savingCedula, setSavingCedula] = useState(false);
+
+  const [payCycle, setPayCycle] = useState<PayCycle>('monthly');
+  const [budgetConfigId, setBudgetConfigId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -25,12 +36,32 @@ export default function SettingsScreen() {
       .eq('label', 'Cédula')
       .maybeSingle()
       .then(({ data }) => {
-        if (data) {
-          setCedulaId(data.id);
-          setCedulaInput(data.password);
-        }
+        if (data) { setCedulaId(data.id); setCedulaInput(data.password); }
+      });
+
+    supabase
+      .from('budget_config')
+      .select('id, pay_cycle')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) { setBudgetConfigId(data.id); setPayCycle((data.pay_cycle as PayCycle) ?? 'monthly'); }
       });
   }, [user]);
+
+  const handlePayCycleChange = async (cycle: PayCycle) => {
+    if (!user) return;
+    setPayCycle(cycle);
+    if (budgetConfigId) {
+      await supabase.from('budget_config').update({ pay_cycle: cycle }).eq('id', budgetConfigId);
+    } else {
+      const { data } = await supabase
+        .from('budget_config')
+        .insert({ user_id: user.id, pay_cycle: cycle, income: 2825095, model: '3_bolsillos', period: 'monthly', needs_pct: 58, wants_pct: 30, savings_pct: 12 })
+        .select('id').single();
+      if (data) setBudgetConfigId(data.id);
+    }
+  };
 
   const handleSaveCedula = async () => {
     if (!user || !cedulaInput.trim()) return;
@@ -98,6 +129,23 @@ export default function SettingsScreen() {
             <RowAction icon="💰" label="Salario y modelo" onPress={() => router.push('/salary-setup')} />
             <RowAction icon="🏷️" label="Categorías" onPress={() => router.push('/categories')} />
             <RowAction icon="🏦" label="Cuentas bancarias" onPress={() => router.push('/accounts')} />
+          </View>
+        </View>
+
+        {/* Pay cycle selector */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Ciclo de pago</Text>
+          <View style={styles.cycleCard}>
+            {PAY_CYCLES.map((c) => (
+              <TouchableOpacity
+                key={c.value}
+                style={[styles.cycleOption, payCycle === c.value && styles.cycleOptionActive]}
+                onPress={() => handlePayCycleChange(c.value)}
+              >
+                <Text style={[styles.cycleLabel, payCycle === c.value && styles.cycleLabelActive]}>{c.label}</Text>
+                <Text style={[styles.cycleDesc, payCycle === c.value && styles.cycleDescActive]}>{c.desc}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -197,6 +245,14 @@ const styles = StyleSheet.create({
   rowIcon: { fontSize: 18, marginRight: 12 },
   rowLabel: { fontSize: 15, color: '#F8FAFC', flex: 1 },
   rowValue: { fontSize: 13, color: '#64748B', maxWidth: 180 },
+  // Pay cycle
+  cycleCard: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  cycleOption: { flex: 1, minWidth: '45%', backgroundColor: '#1E293B', borderRadius: 12, padding: 14, borderWidth: 1.5, borderColor: '#334155' },
+  cycleOptionActive: { borderColor: '#22D3EE', backgroundColor: '#0F2A35' },
+  cycleLabel: { fontSize: 14, fontWeight: '700', color: '#94A3B8', marginBottom: 2 },
+  cycleLabelActive: { color: '#22D3EE' },
+  cycleDesc: { fontSize: 11, color: '#475569' },
+  cycleDescActive: { color: '#94A3B8' },
   // Cédula card
   cedulaCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#334155', gap: 10 },
   cedulaTitle: { fontSize: 15, fontWeight: '700', color: '#F8FAFC' },

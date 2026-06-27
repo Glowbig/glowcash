@@ -9,6 +9,7 @@ import { useAuthStore } from '../src/stores/auth';
 import { useTransactionsStore } from '../src/stores/transactions';
 import { useGmailAuthStore } from '../src/stores/gmailAuth';
 import { importBankEmails } from '../src/lib/gmail';
+import { getLastSyncTimestamp, saveLastSyncTimestamp } from '../src/lib/syncState';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -65,8 +66,12 @@ export default function ImportScreen() {
     setResult(null);
 
     try {
-      const { parsed, unparsed } = await importBankEmails(accessToken, (current, total) =>
-        setProgress({ current, total })
+      const lastSyncMs = await getLastSyncTimestamp('gmail');
+      const since = lastSyncMs ? new Date(lastSyncMs) : null;
+      const { parsed, unparsed } = await importBankEmails(
+        accessToken,
+        (current, total) => setProgress({ current, total }),
+        since,
       );
 
       let imported = 0;
@@ -87,6 +92,7 @@ export default function ImportScreen() {
         else duplicates++;
       }
 
+      await saveLastSyncTimestamp('gmail');
       setResult({ imported, duplicates, unparsed });
     } catch (e: any) {
       setError(e.message ?? 'Error al importar correos.');

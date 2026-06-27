@@ -26,16 +26,20 @@ export function isSmsReadingAvailable(): boolean {
   return getSmsModule() !== null;
 }
 
-function listInboxSms(): Promise<RawSms[]> {
+// since: epoch-ms. Searches from (since - 1 day) to avoid missing messages near boundary.
+function listInboxSms(since?: number): Promise<RawSms[]> {
   return new Promise((resolve, reject) => {
     const SmsAndroid = getSmsModule();
     if (!SmsAndroid) {
       reject(new Error('Lectura de SMS solo disponible en Android con un build de desarrollo (no funciona en Expo Go).'));
       return;
     }
-    const filter = JSON.stringify({ box: 'inbox', maxCount: 500 });
+    const filter: Record<string, unknown> = { box: 'inbox', maxCount: 1000 };
+    if (since) {
+      filter.minDate = since - 24 * 60 * 60 * 1000; // 1 day overlap to catch boundary messages
+    }
     SmsAndroid.list(
-      filter,
+      JSON.stringify(filter),
       (fail: string) => reject(new Error(fail)),
       (_count: number, smsList: string) => resolve(JSON.parse(smsList) as RawSms[])
     );
@@ -64,8 +68,8 @@ export interface SmsImportResult {
   unparsed: number;
 }
 
-export async function importBankSms(): Promise<SmsImportResult> {
-  const messages = await listInboxSms();
+export async function importBankSms(since?: number): Promise<SmsImportResult> {
+  const messages = await listInboxSms(since);
   const parsed: ParsedTransaction[] = [];
   let unparsed = 0;
 
